@@ -6,7 +6,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  getFirestore,
   collection,
   query,
   where,
@@ -17,6 +16,7 @@ import {
   doc,
   getDoc
 } from 'firebase/firestore';
+import { getFirebaseFirestore } from '@/services/firebase/config';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Message } from '@/types/message';
 
@@ -63,21 +63,48 @@ export function useIQTListener(
   useEffect(() => {
     if (!user) return;
 
-    const db = getFirestore();
-    const personalityRef = doc(db, `users/${user.uid}/personality`);
+    let unsubscribe: (() => void) | undefined;
 
-    const unsubscribe = onSnapshot(personalityRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data() as PersonalitySettings;
-        setIsEnabled(data.enabled || false);
-        setSettings(data);
-      } else {
+    const loadSettings = async () => {
+      try {
+        const db = await getFirebaseFirestore();
+        const userRef = doc(db, 'users', user.uid);
+
+        unsubscribe = onSnapshot(userRef, (snapshot) => {
+          if (snapshot.exists()) {
+            const userData = snapshot.data();
+            const personalityData = userData.personality as PersonalitySettings | undefined;
+
+            if (personalityData) {
+              setIsEnabled(personalityData.enabled || false);
+              setSettings(personalityData);
+            } else {
+              setIsEnabled(false);
+              setSettings(null);
+            }
+          } else {
+            setIsEnabled(false);
+            setSettings(null);
+          }
+        }, (error) => {
+          console.error('Error loading IQT settings:', error);
+          setIsEnabled(false);
+          setSettings(null);
+        });
+      } catch (error) {
+        console.error('Failed to initialize IQT listener:', error);
         setIsEnabled(false);
         setSettings(null);
       }
-    });
+    };
 
-    return () => unsubscribe();
+    loadSettings();
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, [user]);
 
   // Detect if a message is a question
@@ -178,52 +205,65 @@ export function useIQTListener(
 
     console.log('🎧 IQT: Listener started');
 
-    const db = getFirestore();
-    const unsubscribes: Unsubscribe[] = [];
+    let unsubscribes: Unsubscribe[] = [];
+    let chatsUnsubscribe: Unsubscribe | undefined;
 
-    // Get all chats where user is a participant
-    const chatsQuery = query(
-      collection(db, 'chats'),
-      where('participants', 'array-contains', user.uid)
-    );
+    const setupListeners = async () => {
+      try {
+        const db = await getFirebaseFirestore();
+        unsubscribes = [];
 
-    const chatsUnsubscribe = onSnapshot(chatsQuery, (chatsSnapshot) => {
-      // Clear existing message listeners
-      unsubscribes.forEach(unsub => unsub());
-      unsubscribes.length = 0;
-
-      chatsSnapshot.forEach((chatDoc) => {
-        const chatId = chatDoc.id;
-
-        // Listen to messages in this chat that are newer than last check
-        const messagesQuery = query(
-          collection(db, 'chats', chatId, 'messages'),
-          where('timestamp', '>', lastCheckTime.current),
-          orderBy('timestamp', 'desc')
+        // Get all chats where user is a participant
+        const chatsQuery = query(
+          collection(db, 'chats'),
+          where('participants', 'array-contains', user.uid)
         );
 
-        const messagesUnsubscribe = onSnapshot(messagesQuery, (messagesSnapshot) => {
-          messagesSnapshot.docChanges().forEach((change) => {
-            if (change.type === 'added') {
-              const message = {
-                id: change.doc.id,
-                ...change.doc.data()
-              } as Message;
+        chatsUnsubscribe = onSnapshot(chatsQuery, (chatsSnapshot) => {
+          // Clear existing message listeners
+          unsubscribes.forEach(unsub => unsub());
+          unsubscribes.length = 0;
 
-              // Process the message asynchronously
-              processMessage(message, chatId);
-            }
+          chatsSnapshot.forEach((chatDoc) => {
+            const chatId = chatDoc.id;
+
+            // Listen to messages in this chat that are newer than last check
+            const messagesQuery = query(
+              collection(db, 'chats', chatId, 'messages'),
+              where('timestamp', '>', lastCheckTime.current),
+              orderBy('timestamp', 'desc')
+            );
+
+            const messagesUnsubscribe = onSnapshot(messagesQuery, (messagesSnapshot) => {
+              messagesSnapshot.docChanges().forEach((change) => {
+                if (change.type === 'added') {
+                  const message = {
+                    id: change.doc.id,
+                    ...change.doc.data()
+                  } as Message;
+
+                  // Process the message asynchronously
+                  processMessage(message, chatId);
+                }
+              });
+            });
+
+            unsubscribes.push(messagesUnsubscribe);
           });
         });
+      } catch (error) {
+        console.error('Failed to setup IQT message listeners:', error);
+      }
+    };
 
-        unsubscribes.push(messagesUnsubscribe);
-      });
-    });
+    setupListeners();
 
     // Cleanup
     return () => {
       console.log('🔇 IQT: Listener stopped');
-      chatsUnsubscribe();
+      if (chatsUnsubscribe) {
+        chatsUnsubscribe();
+      }
       unsubscribes.forEach(unsub => unsub());
     };
   }, [user, isEnabled, settings]);

@@ -6,9 +6,7 @@
 import React, { useState } from 'react';
 import { useIQTListener } from '@/hooks/useIQTListener';
 import { ResponsePreviewModal } from './ResponsePreviewModal';
-import { MessageService } from '@/services/messages/MessageService';
-
-const messageService = MessageService.getInstance();
+import { messageService } from '@/services/messages/MessageService';
 
 export function IQTHandler() {
   const [modalVisible, setModalVisible] = useState(false);
@@ -37,10 +35,9 @@ export function IQTHandler() {
     try {
       console.log('📤 IQT: Auto-sending response to chat', response.chatId);
 
-      await messageService.sendMessage(
+      await messageService.sendTextMessage(
         response.chatId,
-        response.response.responseText,
-        'text'
+        response.response.responseText
       );
 
       console.log('✅ IQT: Response sent automatically');
@@ -53,10 +50,9 @@ export function IQTHandler() {
     if (!currentResponse) return;
 
     try {
-      await messageService.sendMessage(
+      await messageService.sendTextMessage(
         currentResponse.chatId,
-        text,
-        'text'
+        text
       );
 
       console.log('✅ IQT: Response sent by user');

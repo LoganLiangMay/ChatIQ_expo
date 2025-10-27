@@ -35,6 +35,18 @@ service cloud.firestore {
         // Only the user can read/write their own scan tracking
         allow read, write: if isOwner(userId);
       }
+
+      // IQT Mode: Key Messages (saved bulletins)
+      match /keyMessages/{messageId} {
+        // Only the user can read/write their own key messages
+        allow read, write: if isOwner(userId);
+      }
+
+      // IQT Mode: Uploaded Documents
+      match /documents/{documentId} {
+        // Only the user can read/write their own documents
+        allow read, write: if isOwner(userId);
+      }
     }
     
     // Chats collection

@@ -133,7 +133,7 @@ export const extractActionItems = functions.https.onCall(
       const startTime = Date.now();
 
       const response = await callChatCompletion(promptMessages, {
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o',
         temperature: 0.3, // Lower temp for more consistent extraction
         maxTokens: 1000,
       });

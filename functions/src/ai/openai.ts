@@ -34,7 +34,7 @@ export async function callChatCompletion(
   const client = getOpenAIClient();
 
   const {
-    model = 'gpt-4o-mini', // Use GPT-4-mini for cost efficiency
+    model = 'gpt-4o', // Upgraded to gpt-4o for maximum accuracy
     temperature = 0.7,
     maxTokens = 1000,
   } = options;
@@ -66,7 +66,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
   try {
     const response = await client.embeddings.create({
-      model: 'text-embedding-ada-002',
+      model: 'text-embedding-3-small', // Upgraded from ada-002 for better accuracy
       input: text,
     });
 
@@ -97,7 +97,7 @@ export async function generateEmbeddingsBatch(
 
     try {
       const response = await client.embeddings.create({
-        model: 'text-embedding-ada-002',
+        model: 'text-embedding-3-small', // Upgraded from ada-002 for better accuracy
         input: batch,
       });
 

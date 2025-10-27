@@ -16,6 +16,8 @@
     "node_modules",
     "memory-bank",
     "documentation",
-    ".cursor"
+    ".cursor",
+    "functions",
+    "src"
   ]
 }

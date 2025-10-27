@@ -52,12 +52,14 @@ export function PersonalityEditor({ onSave }: PersonalityEditorProps) {
     try {
       setLoading(true);
       const db = getFirestore();
-      const personalityDoc = await getDoc(doc(db, `users/${user.uid}/personality`));
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
 
-      if (personalityDoc.exists()) {
-        const data = personalityDoc.data() as PersonalityData;
-        setPersonality(data);
-        setPhrasesText(data.phrases.join(', '));
+      if (userDoc.exists()) {
+        const personalityData = userDoc.data()?.personality as PersonalityData | undefined;
+        if (personalityData) {
+          setPersonality(personalityData);
+          setPhrasesText((personalityData.phrases || []).join(', '));
+        }
       }
     } catch (error) {
       console.error('Failed to load personality:', error);
@@ -85,7 +87,10 @@ export function PersonalityEditor({ onSave }: PersonalityEditorProps) {
         phrases: parsedPhrases
       };
 
-      await setDoc(doc(db, `users/${user.uid}/personality`), updatedPersonality);
+      // Update personality field in user document
+      await setDoc(doc(db, 'users', user.uid), {
+        personality: updatedPersonality
+      }, { merge: true });
 
       setPersonality(updatedPersonality);
 

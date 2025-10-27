@@ -1,7 +1,7 @@
 /**
- * Document Embedding Function
- * Handles uploading and embedding user documents into the knowledge base
- * Supports text files and PDFs (with pdf-parse dependency)
+ * IQT Mode: Document Embedding
+ * Uploads and embeds documents (PDFs, text files) into user's knowledge base
+ * Properly vectorizes content and stores in Pinecone
  */
 
 import * as functions from 'firebase-functions';
@@ -9,188 +9,298 @@ import * as admin from 'firebase-admin';
 import { OpenAIEmbeddings } from '@langchain/openai';
 import { PineconeStore } from '@langchain/pinecone';
 import { Pinecone } from '@pinecone-database/pinecone';
-import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
-import { Document } from 'langchain/document';
+import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 
-// Initialize Pinecone client (singleton)
+// Singleton Pinecone client
 let pineconeClient: Pinecone | null = null;
-let vectorStore: PineconeStore | null = null;
 
-function getPineconeClient(): Pinecone {
+async function getPineconeClient() {
   if (!pineconeClient) {
-    const apiKey = process.env.EXPO_PUBLIC_PINECONE_API_KEY || functions.config().pinecone?.api_key;
+    const apiKey = process.env.PINECONE_API_KEY;
     if (!apiKey) {
-      throw new Error('Pinecone API key not configured');
+      throw new Error('PINECONE_API_KEY not set');
     }
     pineconeClient = new Pinecone({ apiKey });
   }
   return pineconeClient;
 }
 
-async function getVectorStore(): Promise<PineconeStore> {
-  if (!vectorStore) {
-    const pc = getPineconeClient();
-    const indexName = functions.config().pinecone?.index || process.env.EXPO_PUBLIC_PINECONE_INDEX || 'chatiq-messages';
-    const index = pc.Index(indexName);
+/**
+ * Fetch file from URL as Buffer or string
+ */
+async function fetchFile(url: string, asBuffer: boolean = false): Promise<Buffer | string> {
+  const https = await import('https');
+  const http = await import('http');
 
-    const apiKey = functions.config().openai?.api_key || process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error('OpenAI API key not configured');
-    }
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith('https') ? https : http;
+    const chunks: Buffer[] = [];
 
-    const embeddings = new OpenAIEmbeddings({
-      modelName: 'text-embedding-3-small',
-      apiKey: apiKey,
-    });
-
-    vectorStore = new PineconeStore(embeddings, {
-      pineconeIndex: index,
-      textKey: 'content',
-    });
-  }
-  return vectorStore;
+    client.get(url, (res) => {
+      res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      res.on('end', () => {
+        const buffer = Buffer.concat(chunks);
+        resolve(asBuffer ? buffer : buffer.toString('utf-8'));
+      });
+      res.on('error', reject);
+    }).on('error', reject);
+  });
 }
 
 /**
- * Fetch file content from Firebase Storage URL
+ * Extract text from PDF buffer using pdfjs-dist (Node.js compatible)
  */
-async function fetchFileContent(fileUrl: string): Promise<string> {
+async function extractPdfText(buffer: Buffer): Promise<string> {
   try {
-    const response = await fetch(fileUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch file: ${response.statusText}`);
+    const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+
+    // Load the PDF document
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(buffer),
+      standardFontDataUrl: `${require.resolve('pdfjs-dist')}/standard_fonts/`,
+      useSystemFonts: true,
+      disableFontFace: true,
+    });
+
+    const pdfDocument = await loadingTask.promise;
+    const numPages = pdfDocument.numPages;
+
+    functions.logger.info('PDF loaded', { numPages });
+
+    // Extract text from all pages
+    const textPages: string[] = [];
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const page = await pdfDocument.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => item.str)
+        .join(' ');
+      textPages.push(pageText);
     }
-    return await response.text();
+
+    const fullText = textPages.join('\n\n');
+    functions.logger.info('PDF text extracted', {
+      pages: numPages,
+      totalChars: fullText.length
+    });
+
+    return fullText;
   } catch (error: any) {
-    console.error('Error fetching file:', error);
-    throw new Error(`Failed to fetch file: ${error.message}`);
+    functions.logger.error('PDF extraction failed', { error: error.message });
+    throw new Error(`Failed to parse PDF: ${error.message}`);
   }
 }
 
 /**
- * Extract filename from storage URL
+ * Detect file type and extract text content
  */
-function extractFilename(url: string): string {
-  try {
-    const urlParts = url.split('/');
-    const encodedFilename = urlParts[urlParts.length - 1].split('?')[0];
-    return decodeURIComponent(encodedFilename);
-  } catch {
-    return 'unknown_file';
+async function extractTextContent(fileUrl: string, fileName: string): Promise<string> {
+  const extension = fileName.toLowerCase().split('.').pop();
+
+  functions.logger.info('Extracting text from file', { fileName, extension });
+
+  switch (extension) {
+    case 'pdf': {
+      const buffer = await fetchFile(fileUrl, true) as Buffer;
+      return await extractPdfText(buffer);
+    }
+    case 'txt':
+    case 'md':
+    case 'json':
+    case 'csv':
+    case 'log': {
+      return await fetchFile(fileUrl, false) as string;
+    }
+    default:
+      // Try to treat as text by default
+      try {
+        return await fetchFile(fileUrl, false) as string;
+      } catch {
+        throw new Error(`Unsupported file type: ${extension}. Supported formats: PDF, TXT, MD, JSON, CSV`);
+      }
   }
 }
 
-/**
- * Embed Document Function
- * @param data.fileUrl - Firebase Storage download URL
- * @param data.userId - User ID for metadata filtering
- * @param data.fileName - Optional custom filename
- */
 export const embedDoc = functions
-  .runWith({
-    timeoutSeconds: 300, // 5 minutes for large documents
-    memory: '1GB'
-  })
+  .runWith({ timeoutSeconds: 300, memory: '1GB' })
   .https.onCall(async (data, context) => {
+    // Auth check
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        'User must be authenticated'
+      );
+    }
+
+    const { fileUrl, fileName } = data;
+    const userId = context.auth.uid;
+
+    if (!fileUrl || !fileName) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'fileUrl and fileName are required'
+      );
+    }
+
     try {
-      // Verify authentication
-      if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
-      }
-
-      const { fileUrl, userId, fileName } = data;
-
-      if (!fileUrl || !userId) {
-        throw new functions.https.HttpsError(
-          'invalid-argument',
-          'Missing required parameters: fileUrl and userId'
-        );
-      }
-
-      console.log(`📄 [EmbedDoc] Starting document embedding for user ${userId}`);
-      console.log(`📄 [EmbedDoc] File URL: ${fileUrl.substring(0, 100)}...`);
-
-      // Fetch file content
-      const fileContent = await fetchFileContent(fileUrl);
-      const actualFileName = fileName || extractFilename(fileUrl);
-
-      console.log(`📄 [EmbedDoc] File content length: ${fileContent.length} characters`);
-
-      if (fileContent.length < 10) {
-        throw new functions.https.HttpsError(
-          'invalid-argument',
-          'File content is too short (minimum 10 characters)'
-        );
-      }
-
-      // Create text splitter for chunking
-      const splitter = new RecursiveCharacterTextSplitter({
-        chunkSize: 500,
-        chunkOverlap: 50,
-        separators: ['\n\n', '\n', '. ', ' ', '']
+      functions.logger.info('📄 Embedding document', {
+        userId,
+        fileName
       });
 
-      // Split document into chunks
-      const docs = await splitter.createDocuments([fileContent]);
+      // 1. Extract text content from file
+      const fileContent = await extractTextContent(fileUrl, fileName);
 
-      console.log(`📄 [EmbedDoc] Split into ${docs.length} chunks`);
+      if (!fileContent || fileContent.trim().length === 0) {
+        throw new Error('File is empty or contains no extractable text');
+      }
 
-      // Get vector store
-      const store = await getVectorStore();
+      functions.logger.info('File content extracted', {
+        contentLength: fileContent.length,
+        preview: fileContent.substring(0, 100) + '...'
+      });
 
-      // Prepare documents with metadata
+      // 2. Split document into semantic chunks using LangChain
+      const textSplitter = new RecursiveCharacterTextSplitter({
+        chunkSize: 1000,      // Larger chunks for better context
+        chunkOverlap: 200,    // More overlap for continuity
+        separators: ['\n\n', '\n', '. ', ' ', ''], // Semantic boundaries
+      });
+
+      const chunks = await textSplitter.splitText(fileContent);
+
+      if (chunks.length === 0) {
+        throw new Error('Failed to split document into chunks');
+      }
+
+      functions.logger.info('Document split into chunks', {
+        chunks: chunks.length,
+        avgChunkSize: Math.round(fileContent.length / chunks.length)
+      });
+
+      // 3. Prepare documents with metadata for Pinecone
       const timestamp = Date.now();
-      const documentsToEmbed = docs.map((doc, index) => ({
-        pageContent: doc.pageContent,
+      const docId = `doc_${userId}_${timestamp}`;
+
+      const documentsToEmbed = chunks.map((chunk, index) => ({
+        pageContent: chunk,
         metadata: {
-          id: `doc_${userId}_${timestamp}_${index}`,
-          type: 'doc',
+          id: `${docId}_chunk_${index}`,
+          type: 'document',
           userId,
-          fileName: actualFileName,
+          fileName,
+          documentId: docId,
           chunkIndex: index,
-          totalChunks: docs.length,
-          uploadedAt: timestamp
+          totalChunks: chunks.length,
+          uploadedAt: timestamp,
+          // Add these for better filtering in queries
+          source: 'user_upload',
+          contentType: fileName.split('.').pop() || 'unknown'
         }
       }));
 
+      functions.logger.info('Prepared documents for embedding', {
+        documents: documentsToEmbed.length
+      });
+
+      // 4. Initialize Pinecone
+      const pinecone = await getPineconeClient();
+      const indexName = process.env.PINECONE_INDEX_NAME;
+      if (!indexName) {
+        throw new Error('PINECONE_INDEX_NAME not set');
+      }
+
+      functions.logger.info('Connecting to Pinecone index', { indexName });
+
+      const index = pinecone.Index(indexName);
+      const embeddings = new OpenAIEmbeddings({
+        modelName: 'text-embedding-3-small',
+        apiKey: process.env.OPENAI_API_KEY,
+        dimensions: 1536, // Ensure consistent dimensions
+      });
+
+      // 5. Embed and store in Pinecone using PineconeStore
+      functions.logger.info('Creating embeddings and uploading to Pinecone...');
+
+      const vectorStore = await PineconeStore.fromExistingIndex(embeddings, {
+        pineconeIndex: index,
+        namespace: userId, // Use userId as namespace for data isolation
+      });
+
       // Add documents to Pinecone
-      await store.addDocuments(documentsToEmbed);
+      await vectorStore.addDocuments(documentsToEmbed);
 
-      console.log(`✅ [EmbedDoc] Successfully embedded ${docs.length} chunks`);
+      functions.logger.info('✅ Vectors uploaded to Pinecone', {
+        chunks: chunks.length,
+        namespace: userId
+      });
 
-      // Store document metadata in Firestore
-      await admin.firestore().collection(`users/${userId}/documents`).add({
-        fileName: actualFileName,
-        fileUrl,
-        chunks: docs.length,
-        characters: fileContent.length,
-        uploadedAt: admin.firestore.FieldValue.serverTimestamp(),
-        status: 'embedded'
+      // 6. Store metadata in Firestore
+      const db = admin.firestore();
+
+      await db
+        .collection(`users/${userId}/documents`)
+        .doc(docId)
+        .set({
+          fileName,
+          fileUrl,
+          documentId: docId,
+          chunks: chunks.length,
+          characters: fileContent.length,
+          uploadedAt: admin.firestore.Timestamp.now(),
+          status: 'embedded',
+          fileType: fileName.split('.').pop() || 'unknown',
+          // Add pinecone metadata
+          pineconeNamespace: userId,
+          pineconeIndexName: indexName,
+        });
+
+      functions.logger.info('✅ Metadata saved to Firestore', {
+        docId,
+        collection: `users/${userId}/documents`
       });
 
       return {
         success: true,
-        fileName: actualFileName,
-        chunks: docs.length,
-        characters: fileContent.length
+        docId,
+        fileName,
+        chunks: chunks.length,
+        characters: fileContent.length,
+        message: `Successfully embedded ${chunks.length} chunks from ${fileName}`
       };
-
     } catch (error: any) {
-      console.error('❌ [EmbedDoc] Error:', error);
+      functions.logger.error('❌ embedDoc failed', {
+        error: error.message,
+        stack: error.stack,
+        fileName
+      });
 
-      // Store error in Firestore for debugging
-      if (data.userId) {
-        try {
-          await admin.firestore().collection(`users/${data.userId}/documents`).add({
-            fileName: data.fileName || 'unknown',
-            fileUrl: data.fileUrl,
-            uploadedAt: admin.firestore.FieldValue.serverTimestamp(),
+      // Try to store error in Firestore
+      try {
+        const db = admin.firestore();
+        const timestamp = Date.now();
+        const docId = `doc_${userId}_${timestamp}`;
+
+        await db
+          .collection(`users/${userId}/documents`)
+          .doc(docId)
+          .set({
+            fileName: fileName || 'unknown',
+            fileUrl: fileUrl || '',
+            documentId: docId,
+            chunks: 0,
+            characters: 0,
+            uploadedAt: admin.firestore.Timestamp.now(),
             status: 'error',
-            error: error.message
+            error: error.message,
+            fileType: fileName?.split('.').pop() || 'unknown',
           });
-        } catch (firestoreError) {
-          console.error('Failed to store error in Firestore:', firestoreError);
-        }
+
+        functions.logger.info('Error metadata saved to Firestore', { docId });
+      } catch (dbError: any) {
+        functions.logger.error('Failed to store error in Firestore', {
+          dbError: dbError.message
+        });
       }
 
       throw new functions.https.HttpsError(
@@ -199,21 +309,3 @@ export const embedDoc = functions
       );
     }
   });
-
-/**
- * NOTE: PDF Support
- *
- * To enable PDF file support, install pdf-parse dependency:
- * npm install pdf-parse --save
- *
- * Then add PDF processing logic:
- *
- * import pdf from 'pdf-parse';
- *
- * if (actualFileName.toLowerCase().endsWith('.pdf')) {
- *   const response = await fetch(fileUrl);
- *   const buffer = await response.arrayBuffer();
- *   const pdfData = await pdf(Buffer.from(buffer));
- *   fileContent = pdfData.text;
- * }
- */

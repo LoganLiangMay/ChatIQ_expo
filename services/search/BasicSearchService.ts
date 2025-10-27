@@ -8,7 +8,7 @@ import { attachmentService, Attachment } from '@/services/messages/AttachmentSer
 import { Message } from '@/types/message';
 import { Chat } from '@/types/chat';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
 import { getFirebaseFirestore } from '@/services/firebase/config';
 
 const SEARCH_HISTORY_KEY = '@search_history';
@@ -76,8 +76,14 @@ class BasicSearchService {
     currentUserId: string
   ): Promise<(Message & { relevanceScore: number; chatName?: string })[]> {
     try {
-      // Try FTS5-powered search with ranking
-      const messages = await db.searchMessagesWithRanking(searchQuery, currentUserId, 50);
+      // Try FTS5-powered search with ranking first
+      let messages = await db.searchMessagesWithRanking(searchQuery, currentUserId, 50);
+
+      // If SQLite returns no results (likely in Expo Go), fallback to Firestore
+      if (messages.length === 0) {
+        console.log('SQLite search empty, falling back to Firestore search');
+        messages = await this.searchMessagesInFirestore(searchQuery, currentUserId);
+      }
 
       // Enrich with chat names
       const enriched = await Promise.all(
@@ -100,6 +106,108 @@ class BasicSearchService {
       return enriched;
     } catch (error) {
       console.error('Message search error:', error);
+      // Try Firestore fallback on error
+      try {
+        return await this.searchMessagesInFirestore(searchQuery, currentUserId);
+      } catch (fallbackError) {
+        console.error('Firestore fallback also failed:', fallbackError);
+        return [];
+      }
+    }
+  }
+
+  /**
+   * Firestore fallback for message search (when SQLite is not available)
+   */
+  private async searchMessagesInFirestore(
+    searchQuery: string,
+    currentUserId: string
+  ): Promise<(Message & { relevanceScore: number; chatName?: string })[]> {
+    try {
+      const firestore = await getFirebaseFirestore();
+      const lowerQuery = searchQuery.toLowerCase();
+      const results: (Message & { relevanceScore: number; chatName?: string })[] = [];
+
+      // Get user's chats first
+      const chatsRef = collection(firestore, 'chats');
+      const chatsQuery = query(
+        chatsRef,
+        where('participants', 'array-contains', currentUserId)
+      );
+      const chatsSnapshot = await getDocs(chatsQuery);
+
+      // Search messages in each chat
+      for (const chatDoc of chatsSnapshot.docs) {
+        const chatId = chatDoc.id;
+        const chatData = chatDoc.data();
+        const chatName = chatData.name || 'Direct Chat';
+
+        // Get recent messages from this chat
+        const messagesRef = collection(firestore, 'chats', chatId, 'messages');
+        const messagesQuery = query(
+          messagesRef,
+          orderBy('timestamp', 'desc'),
+          limit(100) // Limit to recent 100 messages per chat
+        );
+
+        try {
+          const messagesSnapshot = await getDocs(messagesQuery);
+
+          messagesSnapshot.forEach((msgDoc) => {
+            const messageData = msgDoc.data();
+            const content = (messageData.content || '').toLowerCase();
+            const senderName = (messageData.senderName || '').toLowerCase();
+
+            // Check if message content or sender name matches the query
+            if (content.includes(lowerQuery) || senderName.includes(lowerQuery)) {
+              // Calculate simple relevance score
+              let relevanceScore = 0.5;
+
+              // Exact match gets higher score
+              if (content === lowerQuery) {
+                relevanceScore = 1.0;
+              } else if (content.startsWith(lowerQuery)) {
+                relevanceScore = 0.8;
+              }
+
+              // Recent messages get bonus
+              const messageAge = Date.now() - (messageData.timestamp?.toMillis?.() || 0);
+              const dayInMs = 24 * 60 * 60 * 1000;
+              if (messageAge < dayInMs) {
+                relevanceScore += 0.2;
+              } else if (messageAge < 7 * dayInMs) {
+                relevanceScore += 0.1;
+              }
+
+              results.push({
+                id: msgDoc.id,
+                chatId,
+                senderId: messageData.senderId,
+                senderName: messageData.senderName || 'Unknown',
+                content: messageData.content,
+                type: messageData.type || 'text',
+                timestamp: messageData.timestamp?.toMillis?.() || Date.now(),
+                syncStatus: 'synced',
+                deliveryStatus: 'delivered',
+                readBy: messageData.readBy || [],
+                deliveredTo: messageData.deliveredTo || [],
+                relevanceScore,
+                chatName,
+              } as Message & { relevanceScore: number; chatName: string });
+            }
+          });
+        } catch (msgError) {
+          console.error(`Error searching messages in chat ${chatId}:`, msgError);
+        }
+      }
+
+      // Sort by relevance score
+      results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+      // Limit to top 50 results
+      return results.slice(0, 50);
+    } catch (error) {
+      console.error('Firestore message search error:', error);
       return [];
     }
   }

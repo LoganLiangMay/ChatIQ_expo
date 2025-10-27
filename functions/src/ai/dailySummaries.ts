@@ -387,7 +387,7 @@ async function generateAndSaveSummary(
   // Generate summary
   const promptMessages = PROMPTS.summarizeThread(messages);
   const response = await callChatCompletion(promptMessages, {
-    model: 'gpt-4o-mini',
+    model: 'gpt-4o',
     temperature: 0.7,
     maxTokens: 500,
   });

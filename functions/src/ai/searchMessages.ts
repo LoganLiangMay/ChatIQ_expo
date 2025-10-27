@@ -214,7 +214,7 @@ async function rankMessagesBySemantic(
   try {
     const client = getOpenAIClient();
     const response = await client.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+      model: 'gpt-4o',
       messages: prompt as any,
       max_tokens: 500,
       temperature: 0.3,

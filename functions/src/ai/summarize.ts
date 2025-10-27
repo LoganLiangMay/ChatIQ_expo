@@ -223,7 +223,7 @@ export const summarizeThread = functions.https.onCall(
       const startTime = Date.now();
 
       const response = await callChatCompletion(promptMessages, {
-        model: 'gpt-4o-mini', // Cost-efficient model
+        model: 'gpt-4o', // Cost-efficient model
         temperature: 0.7,
         maxTokens: 500, // Limit output length to control costs
       });

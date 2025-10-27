@@ -71,17 +71,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Auto-navigate based on auth state
   useEffect(() => {
     if (loading) return;
-    
+
     const inAuthGroup = segments[0] === '(auth)';
-    
-    if (!user && !inAuthGroup) {
-      // User not signed in, redirect to sign in
-      console.log('Redirecting to sign in');
-      router.replace('/(auth)/sign-in');
-    } else if (user && inAuthGroup) {
-      // User signed in, redirect to app
-      console.log('Redirecting to chats');
-      router.replace('/(tabs)/chats');
+
+    try {
+      if (!user && !inAuthGroup) {
+        // User not signed in, redirect to sign in
+        console.log('Redirecting to sign in');
+        router.replace('/(auth)/sign-in');
+      } else if (user && inAuthGroup) {
+        // User signed in, redirect to app
+        console.log('User authenticated, redirecting to chats');
+        router.replace('/(tabs)/chats');
+      }
+    } catch (error) {
+      // Handle navigation errors gracefully
+      console.error('Navigation error:', error);
+      // Don't crash the app if navigation fails
     }
   }, [user, loading, segments]);
   

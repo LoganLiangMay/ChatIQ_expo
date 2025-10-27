@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import { PersonalityEditor } from '@/components/iqt/PersonalityEditor';
 import { DocumentUploader } from '@/components/iqt/DocumentUploader';
+import { SavedMessages } from '@/components/iqt/SavedMessages';
 
 export default function ProfileScreen() {
   const { user } = useAuth();
@@ -25,6 +26,7 @@ export default function ProfileScreen() {
   const [iqtEnabled, setIqtEnabled] = useState(false);
   const [showPersonalityEditor, setShowPersonalityEditor] = useState(false);
   const [showDocumentUploader, setShowDocumentUploader] = useState(false);
+  const [showSavedMessages, setShowSavedMessages] = useState(false);
 
   useEffect(() => {
     loadIQTStatus();
@@ -35,10 +37,11 @@ export default function ProfileScreen() {
 
     try {
       const db = getFirestore();
-      const personalityDoc = await getDoc(doc(db, `users/${user.uid}/personality`));
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
 
-      if (personalityDoc.exists()) {
-        setIqtEnabled(personalityDoc.data()?.enabled || false);
+      if (userDoc.exists()) {
+        const personality = userDoc.data()?.personality;
+        setIqtEnabled(personality?.enabled || false);
       }
     } catch (error) {
       console.error('Failed to load IQT status:', error);
@@ -50,19 +53,27 @@ export default function ProfileScreen() {
 
     try {
       const db = getFirestore();
-      const personalityRef = doc(db, `users/${user.uid}/personality`);
-      const personalityDoc = await getDoc(personalityRef);
+      const userRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userRef);
 
-      if (personalityDoc.exists()) {
-        await setDoc(personalityRef, { ...personalityDoc.data(), enabled: value }, { merge: true });
+      if (userDoc.exists()) {
+        const currentPersonality = userDoc.data()?.personality || {};
+        await setDoc(userRef, {
+          personality: {
+            ...currentPersonality,
+            enabled: value
+          }
+        }, { merge: true });
       } else {
-        await setDoc(personalityRef, {
-          tone: 'neutral',
-          avgLength: 100,
-          phrases: [],
-          enabled: value,
-          autoSend: false
-        });
+        await setDoc(userRef, {
+          personality: {
+            tone: 'neutral',
+            avgLength: 100,
+            phrases: [],
+            enabled: value,
+            autoSend: false
+          }
+        }, { merge: true });
       }
 
       setIqtEnabled(value);
@@ -156,6 +167,15 @@ export default function ProfileScreen() {
                 <Text style={styles.iqtButtonText}>Manage Documents</Text>
                 <Ionicons name="chevron-forward" size={20} color="#CCC" />
               </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.iqtButton}
+                onPress={() => setShowSavedMessages(true)}
+              >
+                <Ionicons name="bookmark-outline" size={20} color="#007AFF" />
+                <Text style={styles.iqtButtonText}>Saved Messages</Text>
+                <Ionicons name="chevron-forward" size={20} color="#CCC" />
+              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -198,6 +218,24 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.modalContent}>
             <DocumentUploader />
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      <Modal
+        visible={showSavedMessages}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <SafeAreaView style={styles.modalContainer} edges={['top']}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Saved Messages</Text>
+            <TouchableOpacity onPress={() => setShowSavedMessages(false)}>
+              <Ionicons name="close" size={28} color="#007AFF" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.modalContent}>
+            <SavedMessages />
           </View>
         </SafeAreaView>
       </Modal>

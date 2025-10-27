@@ -37,7 +37,7 @@ export const detectPriority = functions.https.onCall(
       // Call OpenAI with priority detection prompt
       const messages = PROMPTS.detectPriority(content);
       const response = await callChatCompletion(messages, {
-        model: 'gpt-4o-mini', // Use mini for cost efficiency
+        model: 'gpt-4o', // Upgraded for better priority detection accuracy
         temperature: 0.3, // Low temperature for consistent classification
         maxTokens: 200,
       });

@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, SectionList, TouchableOpacity, ActivityIndicator, Alert, Platform, StatusBar, Modal } from 'react-native';
+import { View, Text, StyleSheet, SectionList, TouchableOpacity, ActivityIndicator, Alert, Platform, StatusBar, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
@@ -6,18 +6,33 @@ import { useChats } from '@/hooks/useChats';
 import { ChatListItem } from '@/components/chat/ChatListItem';
 import { NetworkStatus } from '@/components/ui/NetworkStatus';
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { SearchBar } from '@/components/search/SearchBar';
 import { SearchResults } from '@/components/search/SearchResults';
 import { SearchFilters } from '@/components/search/SearchFilters';
+import { BasicSearchResults } from '@/components/search/BasicSearchResults';
 import { searchService, SearchResult, SearchFilters as SearchFiltersType } from '@/services/search/SearchService';
+import { BasicSearchResult } from '@/services/search/BasicSearchService';
 
 export default function ChatsScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { chats, loading, refreshChats } = useChats(user?.uid || '');
-  
-  // Search state
+
+  // Inline basic search state
+  const [inlineSearchQuery, setInlineSearchQuery] = useState('');
+  const [inlineSearchActive, setInlineSearchActive] = useState(false);
+  const [basicSearchResults, setBasicSearchResults] = useState<BasicSearchResult>({
+    messages: [],
+    chats: [],
+    users: [],
+    photos: [],
+    links: [],
+    documents: [],
+  });
+  const [basicSearchLoading, setBasicSearchLoading] = useState(false);
+
+  // AI search modal state (existing)
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult>({
@@ -134,6 +149,65 @@ export default function ChatsScreen() {
       handleSearch(searchQuery);
     }
   }, [searchQuery, handleSearch]);
+
+  // Inline basic search handler
+  const handleInlineSearch = useCallback(async (query: string) => {
+    if (!user || !query || query.trim().length < 2) {
+      setBasicSearchResults({
+        messages: [],
+        chats: [],
+        users: [],
+        photos: [],
+        links: [],
+        documents: [],
+      });
+      setBasicSearchLoading(false);
+      return;
+    }
+
+    setBasicSearchLoading(true);
+
+    try {
+      const results = await searchService.searchBasic(query, user.uid);
+      setBasicSearchResults(results);
+    } catch (error) {
+      console.error('Basic search error:', error);
+      setBasicSearchResults({
+        messages: [],
+        chats: [],
+        users: [],
+        photos: [],
+        links: [],
+        documents: [],
+      });
+    } finally {
+      setBasicSearchLoading(false);
+    }
+  }, [user]);
+
+  // Debounced inline search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (inlineSearchQuery.trim().length >= 2) {
+        handleInlineSearch(inlineSearchQuery);
+      }
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(timer);
+  }, [inlineSearchQuery, handleInlineSearch]);
+
+  const handleInlineSearchCancel = () => {
+    setInlineSearchActive(false);
+    setInlineSearchQuery('');
+    setBasicSearchResults({
+      messages: [],
+      chats: [],
+      users: [],
+      photos: [],
+      links: [],
+      documents: [],
+    });
+  };
   
   if (loading) {
       return (
@@ -169,7 +243,7 @@ export default function ChatsScreen() {
           <Text style={styles.headerTitle}>Chats</Text>
           <View style={styles.headerButtons}>
             <TouchableOpacity onPress={handleSearchPress} style={styles.searchButton}>
-              <Ionicons name="search-outline" size={24} color="#007AFF" />
+              <Ionicons name="sparkles" size={24} color="#007AFF" />
             </TouchableOpacity>
             <TouchableOpacity onPress={handleNewChat} style={styles.newChatButton}>
               <Ionicons name="create-outline" size={24} color="#007AFF" />
@@ -177,8 +251,51 @@ export default function ChatsScreen() {
           </View>
         </View>
 
-        {/* Chat List with Urgent Section */}
-        {chats.length === 0 ? (
+        {/* Inline Search Bar (Always Visible) */}
+        <View style={styles.inlineSearchContainer}>
+          <View style={styles.inlineSearchBar}>
+            <Ionicons name="search" size={20} color="#999" style={styles.inlineSearchIcon} />
+            <TextInput
+              style={styles.inlineSearchInput}
+              placeholder="Search"
+              placeholderTextColor="#999"
+              value={inlineSearchQuery}
+              onChangeText={setInlineSearchQuery}
+              onFocus={() => setInlineSearchActive(true)}
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
+            {inlineSearchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setInlineSearchQuery('')} style={styles.clearButton}>
+                <Ionicons name="close-circle" size={20} color="#999" />
+              </TouchableOpacity>
+            )}
+            {inlineSearchActive && (
+              <TouchableOpacity onPress={handleInlineSearchCancel} style={styles.cancelButton}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {/* Search Results Overlay (when search is active) */}
+        {inlineSearchActive ? (
+          <View style={styles.searchOverlay}>
+            <BasicSearchResults
+              results={basicSearchResults}
+              searchQuery={inlineSearchQuery}
+              loading={basicSearchLoading}
+              onUserSelect={(user) => {
+                // Handle user selection - create direct chat
+                handleInlineSearchCancel();
+                // TODO: Navigate to chat with user
+              }}
+            />
+          </View>
+        ) : (
+          <>
+            {/* Chat List with Urgent Section */}
+            {chats.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Ionicons name="chatbubbles-outline" size={64} color="#CCC" />
             <Text style={styles.emptyText}>No chats yet</Text>
@@ -213,9 +330,11 @@ export default function ChatsScreen() {
             stickySectionHeadersEnabled={true}
           />
         )}
+          </>
+        )}
       </View>
-      
-      {/* Search Modal */}
+
+      {/* AI Search Modal (Advanced Search) */}
       <Modal
         visible={showSearch}
         animationType="slide"
@@ -402,6 +521,46 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#007AFF',
     fontWeight: '500',
+  },
+  inlineSearchContainer: {
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+  },
+  inlineSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginVertical: 8,
+    backgroundColor: '#F2F2F7',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  inlineSearchIcon: {
+    marginRight: 8,
+  },
+  inlineSearchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#000',
+    paddingVertical: 4,
+  },
+  clearButton: {
+    padding: 4,
+  },
+  cancelButton: {
+    marginLeft: 8,
+    paddingHorizontal: 8,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    color: '#007AFF',
+    fontWeight: '500',
+  },
+  searchOverlay: {
+    flex: 1,
+    backgroundColor: '#FFF',
   },
 });
 

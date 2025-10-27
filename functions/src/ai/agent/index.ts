@@ -76,7 +76,7 @@ export const aiAgent = functions
       ];
 
       const result = await generateText({
-        model: openai('gpt-4o-mini'),
+        model: openai('gpt-4o'), // Upgraded for better reasoning and accuracy
         messages,
         // tools: {
         //   // Tools will be added here once deployment is successful

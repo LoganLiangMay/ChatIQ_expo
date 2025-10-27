@@ -15,7 +15,8 @@ import { ImageMessage } from './ImageMessage';
 import { ImageViewer } from './ImageViewer';
 import { PriorityBadge } from '@/components/ai/PriorityBadge';
 import { mediumHaptic } from '@/utils/haptics';
-import { getFirestore, doc, setDoc, Timestamp } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, Timestamp, collection, query, where, orderBy, limit, getDocs, getDoc } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 interface MessageBubbleProps {
   message: Message;
@@ -77,30 +78,117 @@ export function MessageBubble({
       mediumHaptic();
       setContextMenuVisible(false);
 
+      // Show loading alert (will be dismissed programmatically)
+      const loadingAlert = Alert.alert(
+        'Analyzing Context...',
+        'IQT is analyzing this message and surrounding conversation to understand the full context.'
+      );
+
       const db = getFirestore();
-      const keywords = extractKeywords(message.content);
+      const chatId = message.chatId || '';
 
-      // Save to users/{userId}/keyMessages/{messageId}
-      await setDoc(
-        doc(db, `users/${currentUserId}/keyMessages/${message.id}`),
-        {
-          text: message.content,
-          tags: keywords,
-          sourceMessageId: message.id,
-          sourceChatId: message.chatId || '',
-          timestamp: Timestamp.now(),
-          category: 'manual' // User manually pinned this
+      // 1. Get surrounding messages (5 messages before this one)
+      const surroundingMessages: Array<{
+        content: string;
+        senderName: string;
+        timestamp: any;
+      }> = [];
+
+      if (chatId) {
+        try {
+          const messagesQuery = query(
+            collection(db, 'chats', chatId, 'messages'),
+            where('timestamp', '<', message.timestamp),
+            orderBy('timestamp', 'desc'),
+            limit(5)
+          );
+
+          const messagesSnapshot = await getDocs(messagesQuery);
+          messagesSnapshot.forEach((doc) => {
+            const data = doc.data();
+            surroundingMessages.push({
+              content: data.content || '',
+              senderName: data.senderName || 'Unknown',
+              timestamp: data.timestamp
+            });
+          });
+
+          // Reverse to get chronological order
+          surroundingMessages.reverse();
+        } catch (error) {
+          console.log('Could not fetch surrounding messages:', error);
         }
-      );
+      }
 
-      Alert.alert(
-        'Key Message Saved',
-        `Message pinned with tags: ${keywords.join(', ') || 'none'}`,
-        [{ text: 'OK' }]
-      );
-    } catch (error) {
-      console.error('Failed to pin key message:', error);
-      Alert.alert('Error', 'Failed to save key message');
+      // 2. Get chat context
+      let chatContext: {
+        chatName?: string;
+        chatDescription?: string;
+        isGroup: boolean;
+      } = { isGroup: false };
+
+      if (chatId) {
+        try {
+          const chatDoc = await getDoc(doc(db, 'chats', chatId));
+          if (chatDoc.exists()) {
+            const chatData = chatDoc.data();
+            chatContext = {
+              chatName: chatData.name || chatData.displayName,
+              chatDescription: chatData.projectDescription || chatData.description,
+              isGroup: chatData.type === 'group'
+            };
+          }
+        } catch (error) {
+          console.log('Could not fetch chat context:', error);
+        }
+      }
+
+      console.log('📝 Enriching message with context:', {
+        messageLength: message.content.length,
+        surroundingCount: surroundingMessages.length,
+        chatName: chatContext.chatName
+      });
+
+      // 3. Call enrichKeyMessage function
+      const functions = getFunctions();
+      const enrichKeyMessage = httpsCallable(functions, 'enrichKeyMessage');
+
+      const result = await enrichKeyMessage({
+        messageText: message.content,
+        messageId: message.id,
+        chatId: chatId,
+        surroundingMessages,
+        chatContext
+      });
+
+      const enrichedData = result.data as {
+        success: boolean;
+        tags: string[];
+        contextSummary: string;
+        specificTopic: string;
+      };
+
+      console.log('✅ Message enriched:', enrichedData);
+
+      // 4. Dismiss loading and show success with enhanced context
+      // Small delay to ensure loading alert is dismissed first
+      setTimeout(() => {
+        Alert.alert(
+          '✅ Saved to IQT Knowledge',
+          `Topic: ${enrichedData.specificTopic}\n\n${enrichedData.contextSummary}`,
+          [{ text: 'Got it!' }]
+        );
+      }, 300);
+    } catch (error: any) {
+      console.error('Failed to save key message:', error);
+
+      // Dismiss loading and show error
+      setTimeout(() => {
+        Alert.alert(
+          'Error',
+          error.message || 'Failed to save message. Please try again.'
+        );
+      }, 300);
     }
   };
 
@@ -221,13 +309,13 @@ export function MessageBubble({
                 <Text style={styles.contextMenuText}>Copy</Text>
               </TouchableOpacity>
 
-              {/* Pin as Key Message Button */}
+              {/* Save for IQT Button */}
               <TouchableOpacity
                 style={styles.contextMenuItem}
                 onPress={handlePinKeyMessage}
               >
                 <Ionicons name="bookmark-outline" size={20} color="#007AFF" />
-                <Text style={styles.contextMenuText}>Pin as Key Message</Text>
+                <Text style={styles.contextMenuText}>Save for IQT</Text>
               </TouchableOpacity>
             </View>
           </View>

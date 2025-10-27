@@ -90,9 +90,9 @@ export const knowledgeAgent = functions.https.onCall(async (data, context) => {
     console.log(`✅ [KnowledgeAgent] Using API key, length: ${apiKey.length}`);
 
     const model = new ChatOpenAI({
-      modelName: 'gpt-4o-mini',
+      modelName: 'gpt-4o', // Upgraded for maximum accuracy and reasoning
       temperature: 0.7,
-      apiKey: apiKey,  // Fixed: Use 'apiKey' not 'openAIApiKey'
+      apiKey: apiKey,
     });
 
     // For RAG queries, use vector search + LLM

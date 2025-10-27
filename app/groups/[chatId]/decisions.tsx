@@ -235,7 +235,9 @@ export default function ProjectDecisionsScreen() {
             ]}
           />
           <Text style={styles.sentimentText}>
-            {item.sentiment.charAt(0).toUpperCase() + item.sentiment.slice(1)}
+            {item.sentiment && item.sentiment.length > 0
+              ? item.sentiment.charAt(0).toUpperCase() + item.sentiment.slice(1)
+              : 'Neutral'}
           </Text>
         </View>
       )}

@@ -440,3 +440,11 @@ export {
 export {
   embedDoc              // Embed PDFs and text files
 } from './ai/embedDoc';
+
+/**
+ * IQT Mode - Key Message Enrichment
+ * Enhance saved messages with LLM-analyzed context
+ */
+export {
+  enrichKeyMessage      // Analyze and enrich saved messages with context
+} from './ai/enrichKeyMessage';

@@ -97,7 +97,7 @@
           "arrayConfig": "CONTAINS"
         },
         {
-          "fieldPath": "timestamp",
+          "fieldPath": "savedAt",
           "order": "DESCENDING"
         }
       ]
