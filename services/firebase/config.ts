@@ -57,3 +57,6 @@ export const getFirebaseStorage = (): FirebaseStorage => {
   return storage;
 };
 
+// Export app for direct access
+export { app };
+

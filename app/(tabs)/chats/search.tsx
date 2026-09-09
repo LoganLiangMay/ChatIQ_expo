@@ -13,7 +13,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { searchService, SearchResult, UserSearchResult } from '@/services/search/SearchService';
 import { SearchBar } from '@/components/search/SearchBar';
 import { SearchResults } from '@/components/search/SearchResults';
-import { createDirectChat } from '@/services/firebase/firestore';
+// TODO: Implement createDirectChat function
+// import { createDirectChat } from '@/services/firebase/firestore';
 import { db } from '@/services/database/sqlite';
 
 export default function SearchScreen() {
@@ -83,10 +84,11 @@ export default function SearchScreen() {
               text: 'Start Chat',
               onPress: async () => {
                 try {
-                  await createDirectChat([user.uid, selectedUser.uid]);
-                  
-                  // Navigate to new chat
-                  router.push(`/(tabs)/chats/${chatId}`);
+                  // TODO: Implement direct chat creation
+                  // await createDirectChat([user.uid, selectedUser.uid]);
+                  Alert.alert('Not Implemented', 'Direct chat creation not yet implemented');
+                  // const chatId = 'generated-chat-id';
+                  // router.push(`/(tabs)/chats/${chatId}`);
                 } catch (error) {
                   console.error('Error creating chat:', error);
                   Alert.alert('Error', 'Failed to create chat. Please try again.');

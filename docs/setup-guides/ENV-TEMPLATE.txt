@@ -1,9 +1,0 @@
-# Copy this to .env and replace with your actual Firebase values
-# Get these from Firebase Console > Project Settings > Your apps > Web app
-
-EXPO_PUBLIC_FIREBASE_API_KEY=AIza...your_key_here
-EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=messageai-mvp-xxxxx.firebaseapp.com
-EXPO_PUBLIC_FIREBASE_PROJECT_ID=messageai-mvp-xxxxx
-EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=messageai-mvp-xxxxx.appspot.com
-EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
-EXPO_PUBLIC_FIREBASE_APP_ID=1:123456789:web:xxxxx
