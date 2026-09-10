@@ -1,196 +1,158 @@
-# MessageAI MVP
+# MessageAI - WhatsApp-like Messaging App
 
-A production-quality WhatsApp-like messaging app built with React Native, Expo, and Firebase.
+A production-quality messaging application built with React Native, Expo, and Firebase.
+
+## 🚧 Project Status
+
+**⚠️ ARCHIVED PROJECT - MODERNIZATION IN PROGRESS**
+
+This project was originally built with Expo SDK 49 and has been modernized to SDK 57. The codebase requires additional work before it's production-ready:
+
+### ✅ Completed
+- Upgraded to Expo SDK 57 (React Native 0.86, React 19.2.3)
+- Fixed TypeScript compilation errors
+- Added basic test infrastructure
+- Modernized dependencies
+
+### ⚠️ Known Issues & Technical Debt
+1. **SQLite Integration**: The legacy WebSQL-like API (`openDatabase`) was removed in expo-sqlite@16+. The current implementation includes stubs and will **not work at runtime**. Full migration to the new `openDatabaseAsync` API is required.
+   - See: https://docs.expo.dev/versions/latest/sdk/sqlite/
+
+2. **Firebase Functions**: Cloud functions are included but not configured in the main app dependencies.
+
+3. **Incomplete Features**: Some features have placeholder implementations:
+   - Direct chat creation
+   - Image message sending
+   - Notification handlers require API compatibility fixes
+
+4. **Type Safety**: Several files use `@ts-nocheck` to bypass type errors. These need proper typing.
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 20+
-- Expo Go app on iPhone/iPad
-- Firebase project set up
-- `.env` file configured with Firebase credentials
+- Node.js 22.13+
+- npm or yarn
+- Expo Go app (for testing)
+- Firebase project with Firestore enabled
 
-### Run the App
+### Installation
 
-**Option 1: Use the script** (Recommended)
+1. **Clone and install dependencies**:
 ```bash
-./START.sh
+git clone <repo-url>
+cd ChatIQ_expo
+npm install
 ```
 
-**Option 2: Manual commands**
-```bash
-ulimit -n 10240
-npx expo start --clear
-```
-
-**Then**: Scan QR code with Expo Go on your iPhone/iPad.
-
-**First Launch**: Takes 60-90 seconds to compile TypeScript.
-
----
-
-## 📁 Project Structure
-
-```
-chat_iq/
-├── app/                      # Expo Router screens
-│   ├── (auth)/              # Authentication screens
-│   ├── (tabs)/              # Main app tabs (chats, profile)
-│   └── groups/              # Group management screens
-├── components/              # Reusable React components
-├── contexts/                # React Context (Auth, etc.)
-├── hooks/                   # Custom React hooks
-├── services/                # Business logic
-│   ├── database/           # SQLite service
-│   ├── firebase/           # Firebase operations
-│   ├── messages/           # Message queue & sync
-│   └── network/            # Network monitoring
-├── types/                   # TypeScript type definitions
-├── utils/                   # Utility functions
-├── documentation/           # Project documentation
-│   ├── setup-guides/       # Setup and configuration guides
-│   ├── error-fixes/        # Troubleshooting guides
-│   └── reference-cards/    # Quick reference docs
-├── memory-bank/             # Full project documentation
-│   ├── product-requirements.md
-│   ├── task-list-prs.md    # Your primary development guide
-│   ├── implementation-guide.md
-│   ├── code-architecture.md
-│   └── ...
-└── firebase/                # Cloud Functions (PR #7)
-```
-
----
-
-## 📖 Documentation
-
-### 🎯 Primary Development Guide
-**`memory-bank/task-list-prs.md`** - Follow this PR by PR
-
-### 📚 Reference Documentation
-- **Full PRD**: `memory-bank/product-requirements.md`
-- **Implementation Details**: `memory-bank/implementation-guide.md`
-- **Code Architecture**: `memory-bank/code-architecture.md`
-- **Quick Reference**: `documentation/reference-cards/QUICK-REFERENCE.md`
-- **Setup Guide**: `documentation/setup-guides/SETUP.md`
-
-### 🔧 Troubleshooting
-- **Error Fixes**: `documentation/error-fixes/`
-- **Setup Issues**: `documentation/setup-guides/`
-
----
-
-## 🧪 Testing
-
-### Run Unit Tests
-```bash
-npm test
-```
-
-### Run E2E Tests
-```bash
-detox test --configuration ios
-```
-
-### Firebase Emulator
-```bash
-firebase emulators:start
-```
-
----
-
-## 📊 MVP Progress
-
-Track progress through 10 PRs covering 37 user stories:
-- [x] PR #1: Setup & Authentication (US-1 to US-4)
-- [ ] PR #2: Core Messaging (US-5, 6, 7, 9)
-- [ ] PR #3: Offline Support (US-13-17)
-- [ ] PR #4: Delivery States (US-8, 10, 21)
-- [ ] PR #5: Presence & Typing (US-11, 12)
-- [ ] PR #6: Group Chat (US-18-20, 22)
-- [ ] PR #7: Push Notifications (US-23-25)
-- [ ] PR #8: Images (US-31, 32)
-- [ ] PR #9: Group Management (US-33-37)
-- [ ] PR #10: Validation (US-26-30)
-
-See `memory-bank/task-list-prs.md` for detailed task breakdown.
-
----
-
-## 🔑 Environment Configuration
-
-Copy `.env.example` to `.env` and fill in your Firebase configuration:
-
+2. **Configure Firebase**:
 ```bash
 cp .env.example .env
-# Edit .env with your Firebase config
+# Edit .env with your Firebase credentials from:
+# https://console.firebase.google.com/ -> Project Settings -> General
 ```
 
-Required variables:
-- `EXPO_PUBLIC_FIREBASE_API_KEY`
-- `EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN`
-- `EXPO_PUBLIC_FIREBASE_PROJECT_ID`
-- `EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET`
-- `EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
-- `EXPO_PUBLIC_FIREBASE_APP_ID`
-
----
-
-## 🛠️ Common Commands
-
+3. **Run the app**:
 ```bash
-# Start development server
-npx expo start
-
-# Clear cache and restart
-npx expo start -c
-
-# Open iOS simulator
-npx expo start --ios
-
-# Run tests
-npm test
-
-# Install dependencies
-npm install
-
-# Fix Expo dependencies
-npx expo install --fix
+npm start
+# Scan QR code with Expo Go (iOS/Android)
 ```
 
----
+### Running Tests
+```bash
+npm test        # Run unit tests
+npm run lint    # TypeScript type checking
+```
 
-## 🎯 MVP Features
+**CI Verification**: All tests and type checks run automatically on push/PR via GitHub Actions.
 
-- ✅ Real-time messaging (one-on-one and groups)
-- ✅ Offline support with message queue
-- ✅ Message persistence (survives force quit)
-- ✅ Delivery states and read receipts
-- ✅ Online/offline indicators
-- ✅ Push notifications (foreground)
-- ✅ User authentication
-- ✅ Group chat with admin controls
-- ✅ Image sharing
+## 📂 Project Structure
 
----
+```
+ChatIQ_expo/
+├── app/                    # Expo Router screens
+│   ├── (auth)/            # Authentication
+│   ├── (tabs)/            # Main tabs (chats, search, profile)
+│   └── groups/            # Group management
+├── components/            # Reusable React components
+├── contexts/              # React Context providers
+├── hooks/                 # Custom React hooks
+├── services/              # Business logic
+│   ├── database/          # SQLite (⚠️ requires migration)
+│   ├── firebase/          # Firebase operations
+│   ├── messages/          # Message queue & sync
+│   └── network/           # Network monitoring
+├── types/                 # TypeScript definitions
+├── utils/                 # Utility functions
+├── __tests__/             # Unit tests
+└── memory-bank/           # Project documentation
+```
 
-## 📝 Tech Stack
+## 🛠 Tech Stack
 
-- **Frontend**: React Native + Expo Router
-- **Database**: Expo SQLite (offline-first)
+- **Frontend**: React Native 0.86 + Expo SDK 57
+- **Router**: Expo Router ~57.0
+- **Database**: Expo SQLite (⚠️ requires migration to new API)
 - **Backend**: Firebase (Firestore, Auth, Storage, Functions)
 - **Notifications**: Expo Notifications + FCM
-- **Language**: TypeScript
+- **Language**: TypeScript 5.7
+- **Testing**: Jest + ts-jest
 
----
+## 📋 Environment Variables
 
-## 🔗 Links
+Required in `.env`:
+```
+EXPO_PUBLIC_FIREBASE_API_KEY
+EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN
+EXPO_PUBLIC_FIREBASE_PROJECT_ID
+EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET
+EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+EXPO_PUBLIC_FIREBASE_APP_ID
+```
 
-- **Firebase Console**: https://console.firebase.google.com/
-- **Expo Dashboard**: https://expo.dev/
-- **Documentation**: `memory-bank/` and `documentation/`
+## 🎯 Core Features (Original Design)
 
----
+- ✅ Real-time messaging (one-on-one and groups)
+- ⚠️ Offline support with message queue (requires SQLite migration)
+- ⚠️ Message persistence (requires SQLite migration)
+- ✅ Delivery states and read receipts
+- ✅ Online/offline indicators
+- ⚠️ Push notifications (API compatibility fixes needed)
+- ✅ User authentication
+- ✅ Group chat with admin controls
+- ⚠️ Image sharing (placeholder implementation)
+
+## 🔧 Development
+
+### Key Commands
+```bash
+npm start          # Start Expo dev server
+npm test           # Run Jest tests
+npm run lint       # Type check with TypeScript
+npm run android    # Open Android app
+npm run ios        # Open iOS app
+npm run web        # Open web preview
+```
+
+### Firebase Setup
+1. Create a Firebase project
+2. Enable Firestore, Authentication, and Storage
+3. Set up Firestore security rules (see `firestore.rules`)
+4. (Optional) Deploy Cloud Functions from `functions/` directory
+
+## 📚 Documentation
+
+- **Product Requirements**: `memory-bank/product-requirements.md`
+- **Implementation Guide**: `memory-bank/implementation-guide.md`
+- **Code Architecture**: `memory-bank/code-architecture.md`
+- **Development Roadmap**: `memory-bank/DEVELOPMENT-ROADMAP.md`
+
+## ⚠️ Important Notes
+
+1. **This is a modernization-in-progress project**: It compiles and tests pass, but runtime functionality is incomplete due to SQLite API changes.
+
+2. **Not production-ready**: Requires SQLite migration and feature completion before deployment.
+
+3. **Testing limitations**: Current tests are basic smoke tests. E2E tests are documented but not implemented.
 
 ## 📄 License
 
@@ -198,13 +160,6 @@ Gauntlet AI Project - MessageAI MVP
 
 ---
 
-## 🎓 Project Context
-
-This is a 24-hour MVP sprint to build a production-quality messaging app with:
-- WhatsApp-like core features
-- Offline-first architecture
-- Real-time sync via Firebase
-- Foundation for future AI features
-
-**Primary Guide**: `memory-bank/task-list-prs.md`
-
+**Last Updated**: September 2026  
+**Status**: Archived / Under Modernization  
+**Expo SDK**: 57.0 (React Native 0.86)

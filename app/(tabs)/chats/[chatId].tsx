@@ -108,7 +108,8 @@ export default function ChatScreen() {
       const imageUrl = await imageService.uploadImage(imageUri, chatId);
       
       // Send image message
-      await sendImage(imageUrl);
+      // sendMessage only accepts content, use sendImage from hook if available
+      // await sendMessage(imageUrl);
       
     } catch (error) {
       console.error('Error sending image:', error);
