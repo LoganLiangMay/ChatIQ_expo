@@ -63,6 +63,8 @@ npm test        # Run unit tests
 npm run lint    # TypeScript type checking
 ```
 
+**CI Verification**: All tests and type checks run automatically on push/PR via GitHub Actions.
+
 ## 📂 Project Structure
 
 ```
